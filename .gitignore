@@ -6,3 +6,4 @@ App/
 !*.cpp
 !*.h
 !.gitignore
+!README.md

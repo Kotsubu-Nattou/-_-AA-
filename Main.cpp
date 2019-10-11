@@ -98,7 +98,8 @@ void renderLine(s3d::Image& img, s3d::Point startPos, s3d::Point endPos, s3d::Co
 
 
 // 【関数】線分をレンダリング。疑似アンチエイリアシング付き
-void renderLineAA(s3d::Image& img, s3d::Point startPos, s3d::Point endPos, s3d::ColorF col)
+void renderLineAA(s3d::Image& img, s3d::Point startPos, s3d::Point endPos, s3d::ColorF col,
+                  double aaColorRate = 0.3)
 {
     // 終点を初期位置として始める
     s3d::Point now = endPos;
@@ -114,8 +115,11 @@ void renderLineAA(s3d::Image& img, s3d::Point startPos, s3d::Point endPos, s3d::
         { dist.y = startPos.y - endPos.y; step.y = 1; }
     // 誤差の判定時に四捨五入する、かつ整数で扱うため、関連パラメータを2倍する
     s3d::Point dist2 = dist * 2;
-    // AAのアルファ
-    double aaAlpha = col.a * 0.5;
+    // AA部分の通常部分に対する色の割合
+    if (aaColorRate < 0.0) aaColorRate = 0.0;
+    if (aaColorRate > 1.0) aaColorRate = 1.0;
+    // AA部分の色
+    s3d::ColorF aaCol = s3d::ColorF(col, col.a * aaColorRate);
 
 
     if (dist.x >= dist.y) {
@@ -136,12 +140,12 @@ void renderLineAA(s3d::Image& img, s3d::Point startPos, s3d::Point endPos, s3d::
 
             // 誤差がたまったら
             if (e >= dist2.x) {
-                img[now.y][now.x].set(ColorF(col, aaAlpha));           // 疑似AA
+                img[now.y][now.x].set(aaCol);           // 疑似AA
 
                 // yを「1ドット」移動
                 now.y += step.y;
 
-                img[now.y][now.x - step.x].set(ColorF(col, aaAlpha));  // 疑似AA
+                img[now.y][now.x - step.x].set(aaCol);  // 疑似AA
 
                 // 誤差をリセット。超過分を残すのがミソ
                 e -= dist2.x;
@@ -159,10 +163,10 @@ void renderLineAA(s3d::Image& img, s3d::Point startPos, s3d::Point endPos, s3d::
             e += dist2.x;
 
             if (e >= dist2.y) {
-                img[now.y][now.x].set(ColorF(col, aaAlpha));
+                img[now.y][now.x].set(aaCol);
                 now.x += step.x;
 
-                img[now.y - step.y][now.x].set(ColorF(col, aaAlpha));
+                img[now.y - step.y][now.x].set(aaCol);
                 e -= dist2.y;
             }
         }
@@ -172,7 +176,8 @@ void renderLineAA(s3d::Image& img, s3d::Point startPos, s3d::Point endPos, s3d::
 
 
 // 【関数】減衰する線分をレンダリング。疑似アンチエイリアシング付き
-void renderDecayLine(s3d::Image& img, s3d::Point startPos, s3d::Point endPos, s3d::ColorF col, double decaySectionRate = 0.5)
+void renderDecayLine(s3d::Image& img, s3d::Point startPos, s3d::Point endPos, s3d::ColorF col,
+                     double decaySectionRate = 0.5, double aaColorRate = 0.3)
 {
     // 終点を初期位置として始める
     s3d::Point now = endPos;
@@ -188,8 +193,11 @@ void renderDecayLine(s3d::Image& img, s3d::Point startPos, s3d::Point endPos, s3
         { dist.y = startPos.y - endPos.y; step.y = 1; }
     // 誤差の判定時に四捨五入する、かつ整数で扱うため、関連パラメータを2倍する
     s3d::Point dist2 = dist * 2;
-    // AAのアルファ
-    double aaAlpha = col.a * 0.5;
+    // AA部分の通常部分に対する色の割合
+    if (aaColorRate < 0.0) aaColorRate = 0.0;
+    if (aaColorRate > 1.0) aaColorRate = 1.0;
+    // AA部分の色
+    s3d::ColorF aaCol = s3d::ColorF(col, col.a * aaColorRate);
     // 減衰区間の割合
     if (decaySectionRate < 0.0) decaySectionRate = 0.0;
     if (decaySectionRate > 1.0) decaySectionRate = 1.0;
@@ -197,17 +205,16 @@ void renderDecayLine(s3d::Image& img, s3d::Point startPos, s3d::Point endPos, s3
 
     if (dist.x >= dist.y) {
         // ◎◎ x基準
-        s3d::int32 e = dist.x;  // 誤差の初期値（四捨五入のために閾値/2とする）
+        s3d::int32 e        = dist.x;  // 誤差の初期値（四捨五入のために閾値/2とする）
         s3d::int32 decayLen = (endPos.x - startPos.x) * decaySectionRate;  // 減衰区間の長さ
-        s3d::int32 splitX   = startPos.x + decayLen;                       // 分割地点x
-        double alphaFadeVol = col.a / (1 + std::abs(decayLen));            // アルファのフェード量
+        s3d::int32 splitX   = startPos.x + decayLen;                       // 分割点x
 
-        // ◎ 終点xから分割xまでループ（通常のAA付き線分の処理）
+        // ◎ 終点xから分割点xまでループ（通常のAA付き線分の処理）
         for (;;) {
             // 現在位置に点を描く
             img[now.y][now.x].set(col);
 
-            // 始点なら終了
+            // 分割点ならループを抜ける
             if (now.x == splitX) break;
 
             // xを「1ドット」移動
@@ -218,45 +225,47 @@ void renderDecayLine(s3d::Image& img, s3d::Point startPos, s3d::Point endPos, s3
 
             // 誤差がたまったら
             if (e >= dist2.x) {
-                img[now.y][now.x].set(ColorF(col, aaAlpha));           // 疑似AA
+                img[now.y][now.x].set(aaCol);           // 疑似AA
 
                 // yを「1ドット」移動
                 now.y += step.y;
 
-                img[now.y][now.x - step.x].set(ColorF(col, aaAlpha));  // 疑似AA
+                img[now.y][now.x - step.x].set(aaCol);  // 疑似AA
 
                 // 誤差をリセット。超過分を残すのがミソ
                 e -= dist2.x;
             }
         }
-        
-        // ◎ 分割xから始点xまでループ（ここが減衰する）
+
+        // 始点なら終了
         if (now.x == startPos.x) return;
+
+        // ◎ 分割点xから始点xまでループ（ここが減衰する）
+        double alphaFadeVol = col.a / (1 + std::abs(decayLen));  // アルファのフェード量
         for (;;) {
-            // 最初の点の重複描画を避けるためフローを変更
+            // 初回の重複描画を避けるためフローを変更
             now.x += step.x;
             e += dist2.y;
 
+            col.a -= alphaFadeVol;  // アルファをフェードアウト
+
             if (e >= dist2.x) {
-                img[now.y][now.x].set(ColorF(col, col.a * 0.5));
+                img[now.y][now.x].set(ColorF(col, col.a * aaColorRate));
                 now.y += step.y;
-                img[now.y][now.x - step.x].set(ColorF(col, col.a * 0.5));
+                img[now.y][now.x - step.x].set(ColorF(col, col.a * aaColorRate));
                 e -= dist2.x;
             }
 
             img[now.y][now.x].set(col);
             if (now.x == startPos.x) break;
-
-            col.a -= alphaFadeVol;  // アルファをフェードアウト
         }
     }
 
     else {
         // ◎◎ y基準
-        s3d::int32 e = dist.y;
+        s3d::int32 e        = dist.y;
         s3d::int32 decayLen = (endPos.y - startPos.y) * decaySectionRate;
         s3d::int32 splitY   = startPos.y + decayLen;
-        double alphaFadeVol = col.a / (1 + std::abs(decayLen));
 
         for (;;) {
             img[now.y][now.x].set(col);
@@ -266,29 +275,30 @@ void renderDecayLine(s3d::Image& img, s3d::Point startPos, s3d::Point endPos, s3
             e += dist2.x;
 
             if (e >= dist2.y) {
-                img[now.y][now.x].set(ColorF(col, aaAlpha));
+                img[now.y][now.x].set(aaCol);
                 now.x += step.x;
-                img[now.y - step.y][now.x].set(ColorF(col, aaAlpha));
+                img[now.y - step.y][now.x].set(aaCol);
                 e -= dist2.y;
             }
         }
-
         if (now.y == startPos.y) return;
+
+        double alphaFadeVol = col.a / (1 + std::abs(decayLen));
         for (;;) {
             now.y += step.y;
             e += dist2.x;
 
+            col.a -= alphaFadeVol;
+
             if (e >= dist2.y) {
-                img[now.y][now.x].set(ColorF(col, col.a * 0.5));
+                img[now.y][now.x].set(ColorF(col, col.a * aaColorRate));
                 now.x += step.x;
-                img[now.y - step.y][now.x].set(ColorF(col, col.a * 0.5));
+                img[now.y - step.y][now.x].set(ColorF(col, col.a * aaColorRate));
                 e -= dist2.y;
             }
 
             img[now.y][now.x].set(col);
             if (now.y == startPos.y) break;
-
-            col.a -= alphaFadeVol;
         }
     }
 }
@@ -299,7 +309,7 @@ void renderDecayLine(s3d::Image& img, s3d::Point startPos, s3d::Point endPos, s3
 
 void Main()
 {
-    double scale = 12.0;
+    double scale = 16.0;
     KotsubuPixelBoard board(400, 300, scale);
     Font font = Font(24);
     bool isDrawing = false;
